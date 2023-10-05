@@ -8,60 +8,74 @@ const {
   welcomeEmail,
   questionApprovedEmail,
   questionRejectedEmail
-} = require('../email/email.template')
+} = require('../email/email.template');
+
+
+const changeDateToTimestamp = (dateString) => {
+  return new Date(dateString);
+}
 
 module.exports = {
-  getUsers: (pageToken, callBack) => {
+  async getUsers(pageToken) {
     const maxResults = 1000; // Adjust this as needed
-    admin
-      .auth()
-      .listUsers(maxResults, pageToken)
-      .then((listUsersResult) => {
-        callBack(null, listUsersResult);
-      })
-      .catch((error) => {
-        callBack(error, null);
-      });
+    try {
+      const response = await admin
+        .auth()
+        .listUsers(maxResults, pageToken);
+
+      return response;
+    }
+    catch (error) {
+      return error;
+    };
   },
-  createUserAuth: (data, callBack) => {
-    pool.query(
-      'INSERT INTO auth (uid, displayName, email, emailVerified, disabled, creationTime, lastRefreshTime, lastSignInTime, tokensValidAfterTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        data.uid,
-        data.displayName,
-        data.email,
-        data.emailVerified,
-        data.disabled,
-        data.creationTime,
-        data.lastRefreshTime,
-        data.lastSignInTime,
-        data.tokensValidAfterTime
-      ],
-      (error, results) => {
-        if (error) {
-          return callBack(error);
+  async createUserAuth(data) {
+    return new Promise((resolve, reject) => {
+      pool.query(
+        'INSERT INTO auth (uid, displayName, email, emailVerified, disabled, creationTime, lastRefreshTime, lastSignInTime, tokensValidAfterTime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          data.uid,
+          data.displayName,
+          data.email,
+          data.emailVerified,
+          data.disabled,
+          changeDateToTimestamp(data.metadata.creationTime),
+          changeDateToTimestamp(data.metadata.lastRefreshTime),
+          changeDateToTimestamp(data.metadata.lastSignInTime),
+          changeDateToTimestamp(data.tokensValidAfterTime)
+        ],
+        (error, results) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(results);
+          }
         }
-        return callBack(null, results);
-      }
-    );
+      );
+    });
   },
 
-  updateUserAuth: (data, callBack) => {
-    pool.query(
-      'UPDATE auth SET lastRefreshTime = ?, lastSignInTime = ?, tokensValidAfterTime = ? WHERE uid = ?',
-      [
-        data.lastRefreshTime,
-        data.lastSignInTime,
-        data.tokensValidAfterTime,
-        data.uid
-      ],
-      (error, results) => {
-        if (error) {
-          return callBack(error);
+  async updateUserAuth(data) {
+    return new Promise((resolve, reject) => {
+      pool.query(
+        'UPDATE auth SET emailVerified = ?, disabled = ?, lastRefreshTime = ?, lastSignInTime = ?, tokensValidAfterTime = ? WHERE uid = ?',
+        [
+          data.emailVerified,
+          data.disabled,
+          changeDateToTimestamp(data.metadata.lastRefreshTime),
+          changeDateToTimestamp(data.metadata.lastSignInTime),
+          changeDateToTimestamp(data.tokensValidAfterTime),
+          data.uid
+        ],
+        (error, results) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(results);
+          }
         }
-        return callBack(null, results);
-      }
-    );
+      );
+    });
   },
 
   getUserAuth: (orderColumn, order, offset, limit, callBack) => {
@@ -77,6 +91,46 @@ module.exports = {
         pool.query(
           `SELECT * FROM auth ORDER BY ${orderColumn} ${order} LIMIT ?, ?`,
           [offset, limit],
+          (err, res, fields) => {
+            if (err) {
+              return callBack(err);
+            }
+            return callBack(null, { totalCount, data: res });
+          }
+        );
+      }
+    );
+  },
+
+  async checkUserAuthExists(uid) {
+    return new Promise((resolve, reject) => {
+      pool.query(
+        'SELECT COUNT(*) as totalCount FROM auth WHERE uid = ?',
+        [uid],
+        (countErr, countResult) => {
+          if (countErr) {
+            reject(countErr);
+          } else {
+            resolve(countResult[0].totalCount > 0);
+          }
+        }
+      );
+    });
+  },
+
+  getUserAuthByQuery: (key, value, orderColumn, order, offset, limit, callBack) => {
+    pool.query(
+      'SELECT COUNT(*) as totalCount FROM auth WHERE ?? LIKE ?',
+      [key, `%${value}%`], // Use `%` to perform a partial match with LIKE
+      (countErr, countResult) => {
+        if (countErr) {
+          return callBack(countErr);
+        }
+        const totalCount = countResult[0].totalCount;
+
+        pool.query(
+          `SELECT * FROM auth WHERE ?? LIKE ? ORDER BY ${orderColumn} ${order} LIMIT ?, ?`,
+          [key, `%${value}%`, offset, limit],
           (err, res, fields) => {
             if (err) {
               return callBack(err);

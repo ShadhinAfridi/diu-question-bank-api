@@ -3,14 +3,53 @@ const {
     updateUserAuth,
     getUserAuth,
     getUsers,
+    checkUserAuthExists,
     sendApprovalEmail,
     sendVerificationEmail,
     sendWelcomeEmail,
     createRejectedList,
-    getRejectedDataById
+    getRejectedDataById,
+    getUserAuthByQuery
 } = require("../services/admin.services");
 
+const processUsers = async (pageToken) => {
+    try {
+        let count = 0;
+        const listUsersResult = await getUsers(pageToken);
+        const users = listUsersResult.users;
+
+        for (const userRecord of users) {
+            count++;
+            const userData = userRecord.toJSON();
+            const existingUser = await checkUserAuthExists(userData.uid);
+
+            if (existingUser) {
+                await updateUserAuth(userData);
+            } else {
+                await createUserAuth(userData);
+            }
+        }
+
+        // Check if there are more users to fetch
+        if (listUsersResult.pageToken) {
+            await processUsers(listUsersResult.pageToken);
+        }
+    } catch (error) {
+        console.error('Error processing users:', error);
+    }
+};
+
 module.exports = {
+    async getUsers(req, res) {
+        try {
+            await processUsers();
+            res.status(200).json({ message: 'User update successfully' });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ message: 'Internal server error' });
+        }
+    },
+
     createUserAuth: (req, res) => {
         const body = req.body;
         createUserAuth(body, (err, results) => {
@@ -66,21 +105,29 @@ module.exports = {
         });
     },
 
-    getUsers: (req, res) => {
-        getUsers(req.query.pageToken, (error, listUsersResult) => {
-            if (error) {
-                res.status(500).json({
+    getUserAuthByQuery: (req, res) => {
+        const { searchKey, searchValue, orderColumn, order } = req.query;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const offset = (page - 1) * limit;
+
+        getUserAuthByQuery(searchKey, searchValue, orderColumn, order, offset, limit, (err, result) => {
+            if (err) {
+                console.log(err);
+                return res.status(500).json({
                     success: 0,
-                    message: error.message
-                });
-            } else {
-                res.status(200).json({
-                    success: 1,
-                    message: listUsersResult
+                    message: err.message,
                 });
             }
+
+            return res.json({
+                success: 1,
+                totalCount: result.totalCount,
+                data: result.data,
+            });
         });
     },
+
     createRejectedList: (req, res) => {
         const body = req.body;
         createRejectedList(body, (err, result) => {

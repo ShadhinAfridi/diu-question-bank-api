@@ -9,11 +9,13 @@ const {
     sendVerificationEmail,
     sendWelcomeEmail,
     createRejectedList,
-    getRejectedDataById
+    getRejectedDataById,
+    getUserAuthByQuery
 } = require("../controllers/admin.controller");
 
 router.get('/auth', getUsers);
 router.get('/users', getUserAuth);
+router.get('/users/query', getUserAuthByQuery);
 router.post('/users', createUserAuth);
 router.patch('/users', updateUserAuth);
 router.post('/send-email/approval', sendApprovalEmail);

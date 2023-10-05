@@ -68,7 +68,7 @@ module.exports = {
         res.status(500).json({
           success: 0,
           message: error.message
-        });
+        }); 
       } else {
         res.status(200).json({
           success: 1,
